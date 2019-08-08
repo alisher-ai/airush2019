@@ -7,7 +7,6 @@ class Baseline(nn.Module):
     def __init__(self, hidden_size, out_size):
         super().__init__()
         self.net = nn.Sequential(
-            # nn.BatchNorm2d(128*128*3),
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.BatchNorm2d(32),
