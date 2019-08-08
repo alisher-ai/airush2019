@@ -100,7 +100,6 @@ if __name__ == '__main__':
         model = Baseline(args.hidden_size, args.output_size)
     optimizer = optim.Adam(model.parameters(), args.learning_rate)
     criterion = nn.CrossEntropyLoss()  # multi-class classification task
-    # model = nsml.load(epoch_idx)
     model = model.to(device)
     model.train()
 
