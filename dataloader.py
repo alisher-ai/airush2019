@@ -5,7 +5,7 @@ import pandas as pd
 import pickle as pkl
 from PIL import Image
 import torch
-from torchvision import transforms
+from torchvision import transforms as tr
 from keras_preprocessing.image import ImageDataGenerator
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
@@ -28,10 +28,21 @@ def train_dataloader(input_size=128, batch_size=64, num_workers=0,):
 
     train_dataloader = DataLoader(
         AIRushDataset(image_dir, train_meta_data, label_path=train_label_path_,
-                      transform=transforms.Compose([transforms.Resize((input_size, input_size)),
-                                                    transforms.ToTensor(),
-                                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                                    ]),
+                      transform=tr.Compose(
+                          [
+                              tr.Resize((input_size, input_size)),
+                              tr.RandomApply(
+                                  [
+                                      tr.RandomAffine(30),
+                                      tr.Grayscale(3),
+                                      tr.RandomHorizontalFlip(),
+                                      tr.RandomResizedCrop(input_size),
+                                      tr.ColorJitter(.4, .4, .4)
+                                      ]),
+                              tr.ToTensor(),
+                              tr.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                          ]
+                      ),
                       labels=train_labels),
         batch_size=batch_size,
         shuffle=True,
@@ -40,10 +51,9 @@ def train_dataloader(input_size=128, batch_size=64, num_workers=0,):
 
     val_dataloader = DataLoader(
         AIRushDataset(image_dir, val_meta_data, label_path=train_label_path_,
-                      transform=transforms.Compose([transforms.Resize((input_size, input_size)),
-                                                    transforms.ToTensor(),
-                                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                                                    ]),
+                      transform=tr.Compose([tr.Resize((input_size, input_size)), tr.ToTensor(),
+                                            tr.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                            ]),
                       labels=val_labels),
         batch_size=batch_size,
         shuffle=False,
