@@ -118,7 +118,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), args.learning_rate)
     # optimizer = optim.RMSprop(model.parameters(), args.learning_rate)
     # optimizer = optim.SparseAdam(model.parameters(), args.learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 6, gamma=0.1, last_epoch=-1)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5, last_epoch=-1)
     criterion = nn.CrossEntropyLoss()  # multi-class classification task
     model = model.to(device)
     model.train()
