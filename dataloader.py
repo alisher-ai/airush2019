@@ -18,7 +18,7 @@ def train_dataloader(input_size=128, batch_size=64, num_workers=0,):
     labels = np.load(train_label_path_)
     train_meta_path = os.path.join(DATASET_PATH, 'train', 'train_data', 'train_with_valid_tags.csv')
     train_meta_data_ = pd.read_csv(train_meta_path, delimiter=',', header=0)
-    val_num = int(train_meta_data_.shape[0]*0.1)
+    val_num = int(train_meta_data_.shape[0]*0.02)
 
     train_meta_data = train_meta_data_.iloc[val_num:, :]
     val_meta_data = train_meta_data_.iloc[:val_num, :]
@@ -31,11 +31,13 @@ def train_dataloader(input_size=128, batch_size=64, num_workers=0,):
                       transform=tr.Compose(
                           [
                               tr.Resize((input_size, input_size)),
-                              tr.RandomApply(
+                              tr.RandomChoice(
                                   [
                                       tr.RandomAffine(30),
                                       tr.Grayscale(3),
                                       tr.RandomHorizontalFlip(),
+                                      tr.RandomRotation(degrees=15),
+                                      tr.CenterCrop(size=input_size),
                                       tr.RandomResizedCrop(input_size),
                                       tr.ColorJitter(.4, .4, .4)
                                       ]),
@@ -85,6 +87,7 @@ class AIRushDataset(Dataset):
         png.load()  # required for png.split()
 
         new_img = Image.new("RGB", png.size, (255, 255, 255))
+        # print(png.size)
         new_img.paste(png, mask=png.split()[3])  # 3 is the alpha channel
 
         if self.transform:

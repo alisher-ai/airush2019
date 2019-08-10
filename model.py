@@ -38,9 +38,15 @@ class Resnet(nn.Module):
     def __init__(self, out_size):
         super().__init__()
         model = models.resnet18(pretrained=True)
+        # model = models.densenet121(pretrained=True)
+        # num_ftrs = model.classifier.in_features
+        # model.classifier = nn.Linear(num_ftrs, out_size)
         model = list(model.children())[:-1]
+        # print(model)
         model.append(nn.Conv2d(512, out_size, 1))
+        # model.append(nn.Linear(512, out_size))
         self.net = nn.Sequential(*model)
+        # self.net = model
 
     def forward(self, image):
         return self.net(image).squeeze(-1).squeeze(-1)
