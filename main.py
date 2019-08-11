@@ -1,21 +1,57 @@
+import copy
+from torchvision import transforms as tr
 import os
 import torch
 import torch.nn as nn
+from numpy import random as rand
 import torch.nn.functional as F
-import pdb
 import torch.optim as optim
 import numpy as np
 import argparse
 import pathlib
-import copy
 from model import Baseline, Resnet
 import nsml
 import pandas as pd
-from torchvision import transforms as tr
+from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from dataloader import train_dataloader
 from dataloader import AIRushDataset
+from fastai import *
+from fastai.vision import *
 
+
+class MixUpLoss(Module):
+    "Adapt the loss function `crit` to go with mixup."
+
+    def __init__(self, crit, reduction='mean'):
+        super().__init__()
+        if hasattr(crit, 'reduction'):
+            self.crit = crit
+            self.old_red = crit.reduction
+            setattr(self.crit, 'reduction', 'none')
+        else:
+            self.crit = partial(crit, reduction='none')
+            self.old_crit = crit
+        self.reduction = reduction
+
+    def forward(self, output, target):
+        if len(target.size()) == 2:
+            loss1, loss2 = self.crit(output, target[:, 0].long()), self.crit(output, target[:, 1].long())
+            d = (loss1 * target[:, 2] + loss2 * (1 - target[:, 2])).mean()
+        else:
+            d = self.crit(output, target)
+        if self.reduction == 'mean':
+            return d.mean()
+        elif self.reduction == 'sum':
+            return d.sum()
+        return d
+
+    def get_old(self):
+        if hasattr(self, 'old_crit'):
+            return self.old_crit
+        elif hasattr(self, 'old_red'):
+            setattr(self.crit, 'reduction', self.old_red)
+            return self.crit
 
 def to_np(t):
     return t.cpu().detach().numpy()
@@ -98,7 +134,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
-    epsilon = 2./350
+    epsilon = 4./350
     last_value = 1
     heuristic_vector = []
     for i in range(args.output_size):
@@ -119,7 +155,7 @@ if __name__ == '__main__':
     # optimizer = optim.RMSprop(model.parameters(), args.learning_rate)
     # optimizer = optim.SparseAdam(model.parameters(), args.learning_rate)
     scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5, last_epoch=-1)
-    criterion = nn.CrossEntropyLoss()  # multi-class classification task
+    # criterion = nn.CrossEntropyLoss()  # multi-class classification task
     model = model.to(device)
     model.train()
 
@@ -137,7 +173,24 @@ if __name__ == '__main__':
             model.train()
             total_loss = 0
             total_correct = 0
+            criterion = LabelSmoothingCrossEntropy()
+
             for batch_idx, (image, tags) in enumerate(train_dataloader):
+                if rand.rand() > 0.5:
+                    alpha = 0.4
+                    lambd = np.random.beta(alpha, alpha, tags.size(0))
+                    lambd = np.concatenate([lambd[:, None], 1 - lambd[:, None]], 1).max(1)
+                    lambd = image.new(lambd)
+                    shuffle = torch.randperm(tags.size(0)).to(tags.device)
+                    x1, y1 = image[shuffle], tags[shuffle]
+
+                    out_shape = [lambd.size(0)] + [1 for _ in range(len(x1.shape) - 1)]
+                    new_input = (last_input * lambd.view(out_shape) + x1 * (1 - lambd).view(out_shape))
+                    new_target = torch.cat([last_target[:, None].float(), y1[:, None].float(), lambd[:, None].float()],1)
+                    image = new_input
+                    tags = new_target
+                    criterion = MixUpLoss(criterion)
+
                 optimizer.zero_grad()
                 image = image.to(device)
                 tags = tags.to(device)
@@ -165,6 +218,7 @@ if __name__ == '__main__':
             val_total_loss = 0
             val_total_correct = 0
             val_total_correct_heuristic = 0
+            criterion = LabelSmoothingCrossEntropy()
             for batch_idx, (val_image, val_tags) in enumerate(val_dataloader):
                 val_image = val_image.to(device)
                 val_tags = val_tags.to(device)
