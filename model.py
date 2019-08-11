@@ -44,6 +44,7 @@ class Resnet(nn.Module):
         model = list(model.children())[:-1]
         # print(model)
         model.append(nn.Conv2d(512, out_size, 1))
+        model.append(nn.Conv2d(512, out_size, 1))
         # model.append(nn.Linear(512, out_size))
         self.net = nn.Sequential(*model)
         # self.net = model
