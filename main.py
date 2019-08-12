@@ -1,57 +1,21 @@
-import copy
-from torchvision import transforms as tr
 import os
 import torch
 import torch.nn as nn
-from numpy import random as rand
 import torch.nn.functional as F
+import pdb
 import torch.optim as optim
 import numpy as np
 import argparse
 import pathlib
+import copy
 from model import Baseline, Resnet
 import nsml
 import pandas as pd
-from torchvision import transforms
+from torchvision import transforms as tr
 from torch.utils.data import Dataset, DataLoader
 from dataloader import train_dataloader
 from dataloader import AIRushDataset
-from fastai import *
-from fastai.vision import *
 
-
-class MixUpLoss(Module):
-    "Adapt the loss function `crit` to go with mixup."
-
-    def __init__(self, crit, reduction='mean'):
-        super().__init__()
-        if hasattr(crit, 'reduction'):
-            self.crit = crit
-            self.old_red = crit.reduction
-            setattr(self.crit, 'reduction', 'none')
-        else:
-            self.crit = partial(crit, reduction='none')
-            self.old_crit = crit
-        self.reduction = reduction
-
-    def forward(self, output, target):
-        if len(target.size()) == 2:
-            loss1, loss2 = self.crit(output, target[:, 0].long()), self.crit(output, target[:, 1].long())
-            d = (loss1 * target[:, 2] + loss2 * (1 - target[:, 2])).mean()
-        else:
-            d = self.crit(output, target)
-        if self.reduction == 'mean':
-            return d.mean()
-        elif self.reduction == 'sum':
-            return d.sum()
-        return d
-
-    def get_old(self):
-        if hasattr(self, 'old_crit'):
-            return self.old_crit
-        elif hasattr(self, 'old_red'):
-            setattr(self.crit, 'reduction', self.old_red)
-            return self.crit
 
 def to_np(t):
     return t.cpu().detach().numpy()
@@ -74,7 +38,7 @@ def bind_model(model_nsml):
         # DONOTCHANGE This Line
         test_meta_data = pd.read_csv(test_meta_data_path, delimiter=',', header=0)
 
-        input_size = 224  # you can change this according to your model.
+        input_size = 128  # you can change this according to your model.
         batch_size = 200  # you can change this. But when you use 'nsml submit --test' for test infer, there are only 200 number of data.
         device = 0
 
@@ -103,7 +67,6 @@ def bind_model(model_nsml):
             output_prob = F.softmax(output, dim=1)
             predict = np.argmax(to_np(output_prob), axis=1)
             predict_list.append(predict)
-            print(predict_list)
 
         predict_vector = np.concatenate(predict_list, axis=0)
         return predict_vector  # this return type should be a numpy array which has shape of (138343, 1)
@@ -134,7 +97,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
-    epsilon = 4./350
+    epsilon = 10./350
     last_value = 1
     heuristic_vector = []
     for i in range(args.output_size):
@@ -150,12 +113,11 @@ if __name__ == '__main__':
         model = Resnet(args.output_size)
     else:
         model = Baseline(args.hidden_size, args.output_size)
-
     optimizer = optim.Adam(model.parameters(), args.learning_rate)
-    # optimizer = optim.RMSprop(model.parameters(), args.learning_rate)
-    # optimizer = optim.SparseAdam(model.parameters(), args.learning_rate)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5, last_epoch=-1)
-    # criterion = nn.CrossEntropyLoss()  # multi-class classification task
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5, last_epoch=-1)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.learning_rate, eta_min=1e-8, last_epoch=-1)
+
+    criterion = nn.CrossEntropyLoss()  # multi-class classification task
     model = model.to(device)
     model.train()
 
@@ -173,24 +135,8 @@ if __name__ == '__main__':
             model.train()
             total_loss = 0
             total_correct = 0
-            criterion = LabelSmoothingCrossEntropy()
-
+            top3_total_correct = 0
             for batch_idx, (image, tags) in enumerate(train_dataloader):
-                if rand.rand() > 0.5:
-                    alpha = 0.4
-                    lambd = np.random.beta(alpha, alpha, tags.size(0))
-                    lambd = np.concatenate([lambd[:, None], 1 - lambd[:, None]], 1).max(1)
-                    lambd = image.new(lambd)
-                    shuffle = torch.randperm(tags.size(0)).to(tags.device)
-                    x1, y1 = image[shuffle], tags[shuffle]
-
-                    out_shape = [lambd.size(0)] + [1 for _ in range(len(x1.shape) - 1)]
-                    new_input = (last_input * lambd.view(out_shape) + x1 * (1 - lambd).view(out_shape))
-                    new_target = torch.cat([last_target[:, None].float(), y1[:, None].float(), lambd[:, None].float()],1)
-                    image = new_input
-                    tags = new_target
-                    criterion = MixUpLoss(criterion)
-
                 optimizer.zero_grad()
                 image = image.to(device)
                 tags = tags.to(device)
@@ -200,25 +146,39 @@ if __name__ == '__main__':
                 optimizer.step()
 
                 output_prob = F.softmax(output, dim=1)
+
+                sorted_output_probs = np.sort(output_prob)[::-1]
+                arg_sorted_output_probs = np.argsort(output_prob)[::-1]
+
                 predict_vector = np.argmax(to_np(output_prob), axis=1)
+                predict_vector_2 = np.argsort(to_np(output_prob), axis=1)[::-1]
+                predict_vector_3 = np.argsort(to_np(output_prob), axis=1)[::-1]
+
                 label_vector = to_np(tags)
                 bool_vector = predict_vector == label_vector
+                bool_vector_2 = predict_vector_2 == label_vector
+                bool_vector_3 = predict_vector_3 == label_vector
+
                 accuracy = bool_vector.sum() / len(bool_vector)
+                accuracy_2 = bool_vector_2.sum() / len(bool_vector_2)
+                accuracy_3 = bool_vector_3.sum() / len(bool_vector_3)
 
                 if batch_idx % args.log_interval == 0:
-                    print('Batch {} / {}: Batch Loss {:2.4f} / Batch Acc {:2.4f}'.format(batch_idx,
+                    print('Batch {} / {}: Batch Loss {:2.4f} / Batch Acc {:2.4f} \t Top-3 Acc: {:2.4f}'.format(batch_idx,
                                                                                          len(train_dataloader),
                                                                                          loss.item(),
-                                                                                         accuracy))
+                                                                                         accuracy,
+                                                                                         accuracy + accuracy_2 + accuracy_3))
                 total_loss += loss.item()
                 total_correct += bool_vector.sum()
+                top3_total_correct += bool_vector.sum() + bool_vector_2.sum() + bool_vector_3.sum()
 
             val_model = copy.deepcopy(model)
             val_model.eval()
             val_total_loss = 0
             val_total_correct = 0
+            val_top3_total_correct = 0
             val_total_correct_heuristic = 0
-            criterion = LabelSmoothingCrossEntropy()
             for batch_idx, (val_image, val_tags) in enumerate(val_dataloader):
                 val_image = val_image.to(device)
                 val_tags = val_tags.to(device)
@@ -228,32 +188,41 @@ if __name__ == '__main__':
 
                 val_output_prob = F.softmax(val_output, dim=1)
                 val_predict_vector = np.argmax(to_np(val_output_prob), axis=1)
+                val_predict_vector_2 = np.argsort(to_np(val_output_prob), axis=1)[::-1]
+                val_predict_vector_3 = np.argsort(to_np(val_output_prob), axis=1)[::-1]
+
 
                 val_output_prob_heuristic = np.multiply(to_np(val_output_prob), heuristic_vector)
                 val_predict_vector_heuristic = np.argmax(val_output_prob_heuristic, axis=1)
 
                 val_label_vector = to_np(val_tags)
                 val_bool_vector = val_predict_vector == val_label_vector
+                val_bool_vector_2 = val_predict_vector_2 == label_vector
+                val_bool_vector_3 = val_predict_vector_3 == label_vector
+
                 val_bool_vector_heuristic = val_predict_vector_heuristic == val_label_vector
 
                 val_total_loss += val_loss.item()
                 val_total_correct += val_bool_vector.sum()
+                val_top3_total_correct += val_bool_vector.sum() + val_bool_vector_2.sum() + val_bool_vector_3.sum()
+
                 val_total_correct_heuristic += val_bool_vector_heuristic.sum()
+
 
             nsml.save(epoch_idx)
             print('TRAIN: \t Epoch {} / {}: Loss {:2.4f} / Epoch Acc {:2.4f}'.format(epoch_idx,
-                                                                                     args.epochs,
+                                                                           args.epochs,
                                                                            total_loss / len(train_dataloader.dataset),
-                                                                           total_correct / len(train_dataloader.dataset)))
+                                                                           total_correct / len(train_dataloader.dataset),
+                                                                           top3_total_correct / len(train_dataloader.dataset)))
 
-            print('VAL: \t Epoch {} / {}: Loss {:2.4f} / Val Epoch Acc {:2.4f} / Heuristic Epoch Acc: {:2.4f}'.format(epoch_idx, args.epochs,
+            print('VAL: \t Epoch {} / {}: Loss {:2.4f} / Epoch Acc {:2.4f} / Heuristic: {:2.4f}'.format(epoch_idx, args.epochs,
                                                                            val_total_loss / len(val_dataloader.dataset),
                                                                            val_total_correct / len(val_dataloader.dataset),
-                                                                           val_total_correct_heuristic / len(val_dataloader.dataset)))
+                                                                           val_total_correct_heuristic / len(val_dataloader.dataset),
+                                                                           val_top3_total_correct / len(val_dataloader.dataset)))
 
             nsml.report(summary=True, step=epoch_idx, scope=locals(), **{
                 "train__Loss": total_loss / len(train_dataloader.dataset),
                 "train__Accuracy": total_correct / len(train_dataloader.dataset),
                 })
-
-
