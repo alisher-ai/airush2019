@@ -18,12 +18,13 @@ def train_dataloader(input_size=128, batch_size=64, num_workers=0,):
     labels = np.load(train_label_path_)
     train_meta_path = os.path.join(DATASET_PATH, 'train', 'train_data', 'train_with_valid_tags.csv')
     train_meta_data_ = pd.read_csv(train_meta_path, delimiter=',', header=0)
-    val_num = int(train_meta_data_.shape[0]*0.02)
+    # val_num = int(train_meta_data_.shape[0]*0.02)
+    val_num = int(train_meta_data_.shape[0]*0.005)
 
-    train_meta_data = train_meta_data_.iloc[val_num:, :]
+    train_meta_data = train_meta_data_.iloc[val_num:2*val_num, :]
     val_meta_data = train_meta_data_.iloc[:val_num, :]
 
-    train_labels = labels[val_num:, :]
+    train_labels = labels[val_num:2*val_num, :]
     val_labels = labels[:val_num, :]
 
     train_dataloader = DataLoader(
@@ -94,7 +95,13 @@ class AIRushDataset(Dataset):
             new_img = self.transform(new_img)
 
         if self.label_path is not None:
-            tags = torch.tensor(np.argmax(self.label_matrix[idx])) # here, we will use only one label among multiple labels.
+            tags = torch.tensor(np.argmax(self.label_matrix[idx]))
+            # top_3_tag_indices = []
+            # for ii, lab in enumerate(self.label_matrix[idx].tolist()):
+            #     if int(lab) == 1:
+            #         top_3_tag_indices.append(ii)
+            # top_3_tags = torch.tensor(np.asarray(top_3_tag_indices))
+            # print(tags.shape, top_3_tags.shape)
             return new_img, tags
         else:
             return new_img
