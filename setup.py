@@ -11,5 +11,6 @@ setup(
             'torchvision',
             'pandas',
             'fastai',
+            'torchsummary==1.5.1',
     ]
 )
