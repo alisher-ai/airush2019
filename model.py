@@ -54,14 +54,15 @@ class Resnet(nn.Module):
         # model.classifier = nn.Linear(num_ftrs, out_size)
         # print(model)
         model = list(model.children())[:-1]
-        print(model)
+        # print(model)
         # model.append(nn.Conv2d(512, out_size, 1))
         model.append(Flatten())
         model.append(nn.Linear(512, 1024))
         model.append(nn.ReLU(inplace=True))
-        model.append(nn.Linear(1024, 1024))
-        model.append(nn.ReLU(inplace=True))
-        model.append(nn.Linear(out_size, out_size))
+        model.append(nn.Dropout(0.5))
+        # model.append(nn.Linear(1024, 1024))
+        # model.append(nn.ReLU(inplace=True))
+        model.append(nn.Linear(1024, out_size))
         self.net = nn.Sequential(*model)
         # self.net = model
 
